@@ -1,10 +1,13 @@
-/// Modelの変更を通知する
-/// SwiftのNotificationCenterは型安全ではなくEntityの変更を通知したい時でもハードコーディングする必要があった
-/// これに対応したのが今回作成したNotificationCoreで, 従来のObjcやCombineではなくAsyncStreamを用いて通知する.
-/// 以下に使用例を示す
-
+/// A type-safe notification hub for model changes.
+///
+/// Swift's `NotificationCenter` isn't type-safe and often requires hard-coded string keys
+/// even when notifying changes to specific entities. `NotificationCore` addresses this by
+/// providing a strongly typed, async/await-friendly API built on `AsyncStream`, rather than
+/// legacy Objective‑C patterns or Combine.
+///
+/// The following example demonstrates how to observe and send updates:
 /**
- // 以下のstructを監視する
+ // Observe changes to the following model
  struct SamplePerson: Sendable, Equatable {
    let name: String
    let age: Int
@@ -14,32 +17,34 @@
    static let person: ObserverKey<SamplePerson> = .init()
  }
 
- // observerを追加
- for await person in NotificationCore.addObserver(keyPath: \.person ) {
-    print(person)
+ // Add an observer
+ for await person in NotificationCore.addObserver(keyPath: \.person) {
+   print(person)
  }
 
- // 変更を通知
- await NotificationCore.shared.send(keyPath: \.person , value: .init(name: "test1", age: 20))
+ // Post a change
+ await NotificationCore.shared.send(keyPath: \.person, value: .init(name: "test1", age: 20))
 **/
 
 extension KeyPath: @unchecked @retroactive Sendable {}
 
+/// A global actor that serializes access to `NotificationCore`'s shared state.
 @globalActor
 public struct NotificationCoreActor {
   public actor ActorType {}
   public static let shared: ActorType = ActorType()
 }
 
+/// A strongly typed notification center that publishes model changes via `AsyncStream`.
 @NotificationCoreActor
 public class NotificationCore {
   public static let shared = NotificationCore()
   private var observerStorage: [ObservableModelID: [Any]] = [:]
   private init() {}
 
-  /// Modelの変更を監視する
-  /// - Parameter key: NotificationCore.Name.key
-  /// - Returns: AsyncStreamで変更を通知する
+  /// Subscribes to updates for the specified key.
+  /// - Parameter keyPath: A key path to an `ObserverKey` defined on `NotificationCore.Name`.
+  /// - Returns: An `AsyncStream` that yields values whenever a matching update is posted.
   public nonisolated static func addObserver<Model: Sendable>(keyPath: KeyPath<Name.Type, ObserverKey<Model>>) -> AsyncStream<Model> {
     AsyncStream { continuation in
       let key = Self.Name.self[keyPath: keyPath]
@@ -57,10 +62,10 @@ public class NotificationCore {
     }
   }
 
-  /// Modelの変更を通知する
+  /// Posts an update for the specified key.
   /// - Parameters:
-  ///   - key: NotificationCore.Name.key
-  ///   - value: 通知する値
+  ///   - keyPath: A key path to an `ObserverKey` defined on `NotificationCore.Name`.
+  ///   - value: The value to deliver to observers.
   public func send<Model: Sendable>(keyPath: KeyPath<Name.Type, ObserverKey<Model>>, value: Model) {
     let key = Self.Name.self[keyPath: keyPath]
     Sender<Model>(key: key).send(value: value)
@@ -69,13 +74,14 @@ public class NotificationCore {
 
 // MARK: - NotificationCore.Name
 public extension NotificationCore {
+  /// A namespace for declaring typed observer keys.
   struct Name {}
 }
 
 // MARK: - Private Logic
 private extension NotificationCore {
-  /// observerを破棄する
-  /// - Parameter observerID: `observeItems`で取得したID
+  /// Removes all observers associated with the given identifier.
+  /// - Parameter observerID: The identifier returned from registration.
   func removeObserver(observerID: ObservableModelID) {
     observerStorage.removeValue(forKey: observerID)
   }
@@ -83,6 +89,7 @@ private extension NotificationCore {
 
 // MARK: - Internal
 internal extension NotificationCore {
+  /// Stores a typed callback and registers it under a specific observer key.
   @NotificationCoreActor
   struct Observer<Model: Sendable> {
     internal let key: ObserverKey<Model>
@@ -96,6 +103,7 @@ internal extension NotificationCore {
     }
   }
 
+  /// Delivers values to observers registered under a specific key and validates key usage.
   @NotificationCoreActor
   struct Sender<Model: Sendable> {
     internal let key: ObserverKey<Model>
