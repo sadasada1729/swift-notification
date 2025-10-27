@@ -39,3 +39,25 @@ let package = Package(
     )
   ]
 )
+```
+## Usage
+
+``` Swift
+ // Observe changes to the following model
+ struct SamplePerson: Sendable, Equatable {
+   let name: String
+   let age: Int
+ }
+
+ extension NotificationCore.Name {
+   static let person: ObserverKey<SamplePerson> = .init()
+ }
+
+ // Add an observer
+ for await person in NotificationCore.addObserver(keyPath: \.person) {
+   print(person)
+ }
+
+ // Post a change
+ await NotificationCore.shared.send(keyPath: \.person, value: .init(name: "test1", age: 20))
+```
