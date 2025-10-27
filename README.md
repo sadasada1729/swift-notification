@@ -49,6 +49,7 @@ let package = Package(
    let age: Int
  }
 
+ // Register target entity
  extension NotificationCore.Name {
    static let person: ObserverKey<SamplePerson> = .init()
  }
